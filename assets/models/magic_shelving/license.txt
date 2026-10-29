@@ -1,0 +1,11 @@
+Model Information:
+* title:	Magic shelving
+* source:	https://sketchfab.com/3d-models/magic-shelving-2f45403785044352a6ec1d945a8d2a4c
+* author:	Arya (https://sketchfab.com/Ana.Maria.Farbotko)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Magic shelving" (https://sketchfab.com/3d-models/magic-shelving-2f45403785044352a6ec1d945a8d2a4c) by Arya (https://sketchfab.com/Ana.Maria.Farbotko) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

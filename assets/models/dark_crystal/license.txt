@@ -1,0 +1,11 @@
+Model Information:
+* title:	Dark Crystal
+* source:	https://sketchfab.com/3d-models/dark-crystal-0d8e4e8780164cbca04053996b05591a
+* author:	Martin Wörister (https://sketchfab.com/martinwoerister)
+
+Model License:
+* license type:	CC-BY-NC-ND-4.0 (http://creativecommons.org/licenses/by-nc-nd/4.0/)
+* requirements:	Author must be credited. No commercial use. Modified versions can not be distributed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Dark Crystal" (https://sketchfab.com/3d-models/dark-crystal-0d8e4e8780164cbca04053996b05591a) by Martin Wörister (https://sketchfab.com/martinwoerister) licensed under CC-BY-NC-ND-4.0 (http://creativecommons.org/licenses/by-nc-nd/4.0/)

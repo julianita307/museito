@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Museo del Cristal Encantado</title>
+    <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
+
+    <script>
+    // Mantiene al visitante dentro de la sala y fuera del cristal, estatuas y pedestal del libro
+    AFRAME.registerComponent('room-bounds', {
+      init: function () { this.obs = [[0, 0, 2.8], [-3.2, -4.2, 1], [3.2, -4.2, 1], [5.25, 0, 0.9], [-4.6, -5.5, 1.1], [4.75, -5.6, 0.9], [-5.6, 4.2, 1.1], [5.6, 4.2, 1.1]]; },
+      tick: function () {
+        var p = this.el.object3D.position;
+        p.x = Math.max(-5.4, Math.min(5.4, p.x));
+        p.z = Math.max(-5.4, Math.min(5.4, p.z));
+        this.obs.forEach(function (o) {
+          var dx = p.x - o[0], dz = p.z - o[1], d = Math.hypot(dx, dz);
+          if (d < o[2] && d > 0.001) { p.x = o[0] + dx / d * o[2]; p.z = o[1] + dz / d * o[2]; }
+        });
+      }
+    });
+
+    // Caminar con el joystick izquierdo en VR (en PC se usa WASD)
+    AFRAME.registerComponent('thumbstick-move', {
+      init: function () {
+        var s = this; this.v = { x: 0, y: 0 };
+        this.el.addEventListener('thumbstickmoved', function (e) { s.v = e.detail; });
+        this.cam = document.querySelector('[camera]').object3D;
+        this.rig = document.querySelector('#rig').object3D;
+      },
+      tick: function (t, dt) {
+        if (Math.abs(this.v.x) < 0.15 && Math.abs(this.v.y) < 0.15) return;
+        var yaw = this.cam.getWorldQuaternion(new THREE.Quaternion());
+        yaw = new THREE.Euler().setFromQuaternion(yaw, 'YXZ').y;
+        var k = 2 * dt / 1000;
+        this.rig.position.x += (Math.cos(yaw) * this.v.x + Math.sin(yaw) * this.v.y) * k;
+        this.rig.position.z += (-Math.sin(yaw) * this.v.x + Math.cos(yaw) * this.v.y) * k;
+      }
+    });
+    </script>
+    <script>
+    // 1) Cristal: gira sobre su eje vertical, de forma continua (grados por segundo)
+    AFRAME.registerComponent('girar', {
+      schema: { velocidad: { default: 20 } },
+      tick: function (t, dt) {
+        this.el.object3D.rotation.y += THREE.MathUtils.degToRad(this.data.velocidad) * Math.min(dt, 100) / 1000;
+      }
+    });
+
+    // 2) Cuadros: se expanden suavemente mientras alguien los mira (mirada de la cámara o láser del mando)
+    AFRAME.registerComponent('mirar-expandir', {
+      schema: { escala: { default: 1.2 }, avance: { default: 0.08 }, velocidad: { default: 6 } },
+      init: function () {
+        var self = this, el = this.el;
+        this.p = 0;          // progreso de la animación: 0 = tamaño original, 1 = expandido
+        this.mirando = 0;    // cuántos rayos (mirada/mandos) apuntan al cuadro
+        this.base = null;
+        el.querySelectorAll('.mirable').forEach(function (hijo) {
+          hijo.addEventListener('mouseenter', function () { self.mirando++; });
+          hijo.addEventListener('mouseleave', function () { self.mirando = Math.max(0, self.mirando - 1); });
+        });
+        // borde luminoso discreto detrás del marco (invisible hasta que se mira)
+        var caja = el.querySelector('a-box');
+        this.halo = document.createElement('a-plane');
+        this.halo.setAttribute('width', (parseFloat(caja.getAttribute('width')) || 1) + 0.2);
+        this.halo.setAttribute('height', (parseFloat(caja.getAttribute('height')) || 1) + 0.2);
+        this.halo.setAttribute('position', '0 0 -0.032');
+        this.halo.setAttribute('material', 'shader: flat; color: #ffd08a; transparent: true; opacity: 0');
+        el.appendChild(this.halo);
+      },
+      tick: function (t, dt) {
+        var o = this.el.object3D;
+        if (!this.base) {
+          this.base = { pos: o.position.clone(), esc: o.scale.clone(), dir: new THREE.Vector3(0, 0, 1).applyQuaternion(o.quaternion) };
+        }
+        var meta = this.mirando > 0 ? 1 : 0;
+        if (this.p === meta) return;
+        this.p += (meta - this.p) * (1 - Math.exp(-this.data.velocidad * Math.min(dt, 100) / 1000));
+        if (Math.abs(meta - this.p) < 0.002) this.p = meta;
+        o.scale.copy(this.base.esc).multiplyScalar(1 + (this.data.escala - 1) * this.p);
+        o.position.copy(this.base.pos).addScaledVector(this.base.dir, this.data.avance * this.p);
+        var malla = this.halo.getObject3D('mesh');
+        if (malla) malla.material.opacity = 0.55 * this.p;
+      }
+    });
+
+    // 3) Audio ambiental: suena en bucle y se inicia con el botón "Entrar al museo" o al entrar en VR
+    window.addEventListener('DOMContentLoaded', function () {
+      var audio = document.querySelector('#musica'), boton = document.querySelector('#boton-entrar');
+      audio.volume = 0.35;
+      function iniciar() {
+        boton.style.display = 'none';
+        if (!audio.paused) return;   // una sola reproducción a la vez
+        audio.play().catch(function () { boton.style.display = 'block'; });   // si el navegador lo bloquea, vuelve el botón
+      }
+      boton.addEventListener('click', iniciar);
+      document.querySelector('a-scene').addEventListener('enter-vr', iniciar);
+    });
+    </script>
+</head>
+<body>
+    <!-- Recursos: texturas, imágenes y modelos 3D -->
+    <a-assets timeout="60000">
+      <img id="piso" src="./assets/wood_table_001_diff_4k.jpg">
+      <img id="corteza" src="./assets/bark_brown_02_diff_4k.jpg">
+      <img id="cuadro1" src="./assets/_-9.jpg">
+      <img id="cuadro2" src="./assets/_-10.jpg">
+      <img id="cuadro3" src="./assets/Designing_the_Dark_Crystal.jpg">
+      <img id="cuadro4" src="./assets/Some_more_Brian_Froud_concept_art_from_The_Dark_Crystal__1982__.jpg">
+      <img id="cuadro5" src="./assets/Museo_del_Cristal_Encantado_1.png">
+      <img id="cuadro6" src="./assets/Jen.jpg">
+      <img id="cuadro7" src="./assets/No_makeup.jpg">
+
+      <a-asset-item id="cristal" src="./assets/models/dark_crystal/scene.gltf"></a-asset-item>
+      <a-asset-item id="closet" src="./assets/models/gothic_cabinet_01/scene.gltf"></a-asset-item>
+      <a-asset-item id="escritorio-mago" src="./assets/models/wizard_table/scene.gltf"></a-asset-item>
+      <a-asset-item id="escritorio" src="./assets/models/desk_office_vintage/scene.gltf"></a-asset-item>
+      <a-asset-item id="estanteria" src="./assets/models/magic_shelving/scene.gltf"></a-asset-item>
+      <a-asset-item id="pedestal" src="./assets/models/pedestal/scene.gltf"></a-asset-item>
+      <a-asset-item id="pedestal-libro" src="./assets/models/pedestal_book/scene.gltf"></a-asset-item>
+      <a-asset-item id="chamberlain" src="./assets/models/the_chamberlain/scene_pbr.gltf"></a-asset-item>
+      <a-asset-item id="aughra" src="./assets/models/aughra/scene.gltf"></a-asset-item>
+      <a-asset-item id="candelabro" src="./assets/models/antique_chandelier/scene.gltf"></a-asset-item>
+    </a-assets>
+
+    <a-scene xr-mode-ui="enterAREnabled:false" background="color: #0d0b14">
+
+        <!-- Visitante-->
+        <a-entity id="rig" position="0 0 4.8" wasd-controls="acceleration: 40" room-bounds>
+          <a-entity camera look-controls position="0 1.8 0">
+            <a-cursor fuse="false" raycaster="objects: .mirable; far: 9" scale="0.5 0.5 0.5" material="color: #ffffff; shader: flat; opacity: 0.6"></a-cursor>
+          </a-entity>
+          <a-entity laser-controls="hand: left" raycaster="objects: .mirable" thumbstick-move></a-entity>
+          <a-entity laser-controls="hand: right" raycaster="objects: .mirable"></a-entity>
+        </a-entity>
+
+        <!-- Sala-->
+        <a-plane material="src: #piso; repeat: 3 3" rotation="-90 0 0" width="12" height="12"></a-plane>
+        <a-plane material="src: #corteza; repeat: 3 1" color="#7a5a40" rotation="90 0 0" width="12" height="12" position="0 4.5 0"></a-plane>
+        <a-plane material="src: #corteza; repeat: 4 2" color="#c8956a" width="12" height="4.5" position="0 2.25 -6"></a-plane>
+        <a-plane material="src: #corteza; repeat: 4 2" color="#c8956a" width="12" height="4.5" position="0 2.25 6" rotation="0 180 0"></a-plane>
+        <a-plane material="src: #corteza; repeat: 4 2" color="#c8956a" width="12" height="4.5" position="-6 2.25 0" rotation="0 90 0"></a-plane>
+        <a-plane material="src: #corteza; repeat: 4 2" color="#c8956a" width="12" height="4.5" position="6 2.25 0" rotation="0 -90 0"></a-plane>
+
+        <!-- Vigas-->
+        <a-cylinder material="src: #piso; repeat: 1 2" color="#c08a60" radius="0.25" height="4.5" position="-5.75 2.25 -5.75"></a-cylinder>
+        <a-cylinder material="src: #piso; repeat: 1 2" color="#c08a60" radius="0.25" height="4.5" position="5.75 2.25 -5.75"></a-cylinder>
+        <a-cylinder material="src: #piso; repeat: 1 2" color="#c08a60" radius="0.25" height="4.5" position="-5.75 2.25 5.75"></a-cylinder>
+        <a-cylinder material="src: #piso; repeat: 1 2" color="#c08a60" radius="0.25" height="4.5" position="5.75 2.25 5.75"></a-cylinder>
+
+        <!-- Ventana del fondo -->
+        <a-plane material="shader: flat; color: #b9a8ff" width="2.4" height="3.4" position="0 2.7 -5.95"></a-plane>
+        <a-box color="#2b1a0e" width="0.2" height="3.7" depth="0.15" position="-1.3 2.7 -5.9"></a-box>
+        <a-box color="#2b1a0e" width="0.2" height="3.7" depth="0.15" position="1.3 2.7 -5.9"></a-box>
+        <a-box color="#2b1a0e" width="2.8" height="0.2" depth="0.15" position="0 4.5 -5.9"></a-box>
+        <a-box color="#2b1a0e" width="2.8" height="0.2" depth="0.15" position="0 0.9 -5.9"></a-box>
+        <a-box color="#2b1a0e" width="0.1" height="3.4" depth="0.1" position="0 2.7 -5.9"></a-box>
+        <a-box color="#2b1a0e" width="2.4" height="0.1" depth="0.1" position="0 2.9 -5.9"></a-box>
+
+        <!-- Cuadros con imágenes de la película -->
+        <a-entity id="marco1" position="-5.95 2 -3.4" mirar-expandir rotation="0 90 0">
+          <a-box class="mirable" color="#2b1a0e" width="0.85" height="1.24" depth="0.06"></a-box>
+          <a-image class="mirable" src="#cuadro1" width="0.71" height="1.1" position="0 0 0.04"></a-image>
+        </a-entity>
+        <a-entity id="marco2" position="-5.95 2 -1.1" mirar-expandir rotation="0 90 0">
+          <a-box class="mirable" color="#2b1a0e" width="0.97" height="1.24" depth="0.06"></a-box>
+          <a-image class="mirable" src="#cuadro2" width="0.83" height="1.1" position="0 0 0.04"></a-image>
+        </a-entity>
+        <a-entity id="marco3" position="-5.95 2 1.2" mirar-expandir rotation="0 90 0">
+          <a-box class="mirable" color="#2b1a0e" width="0.94" height="1.24" depth="0.06"></a-box>
+          <a-image class="mirable" src="#cuadro3" width="0.8" height="1.1" position="0 0 0.04"></a-image>
+        </a-entity>
+        <a-entity id="marco4" position="5.95 2 -3.4" mirar-expandir rotation="0 -90 0">
+          <a-box class="mirable" color="#2b1a0e" width="1.06" height="1.24" depth="0.06"></a-box>
+          <a-image class="mirable" src="#cuadro4" width="0.92" height="1.1" position="0 0 0.04"></a-image>
+        </a-entity>
+        <a-entity id="marco5" position="5.95 2 -1.1" mirar-expandir rotation="0 -90 0">
+          <a-box class="mirable" color="#2b1a0e" width="1.34" height="1.24" depth="0.06"></a-box>
+          <a-image class="mirable" src="#cuadro5" width="1.2" height="1.1" position="0 0 0.04"></a-image>
+        </a-entity>
+        <a-entity id="marco6" position="5.95 2 1.2" mirar-expandir rotation="0 -90 0">
+          <a-box class="mirable" color="#2b1a0e" width="0.92" height="1.24" depth="0.06"></a-box>
+          <a-image class="mirable" src="#cuadro6" width="0.78" height="1.1" position="0 0 0.04"></a-image>
+        </a-entity>
+        <a-entity id="marco7" position="0 2 5.95" mirar-expandir rotation="0 180 0">
+          <a-box class="mirable" color="#2b1a0e" width="0.89" height="1.24" depth="0.06"></a-box>
+          <a-image class="mirable" src="#cuadro7" width="0.75" height="1.1" position="0 0 0.04"></a-image>
+        </a-entity>
+
+        <!-- Alfombra-->
+        <a-circle color="#3d2a5c" rotation="-90 0 0" radius="3.2" position="0 0.01 0"></a-circle>
+        <a-ring color="#a8843f" rotation="-90 0 0" radius-inner="2.85" radius-outer="2.97" position="0 0.02 0"></a-ring>
+
+        <!-- CRISTAL-->
+        <a-cylinder color="#3a2416" radius="1.5" height="0.25" position="0 0.125 0"></a-cylinder>
+        <a-cylinder color="#4a2e1c" radius="0.8" height="0.6" position="0 0.55 0"></a-cylinder>
+        <a-cylinder color="#3a2416" radius="1.1" height="0.15" position="0 0.925 0"></a-cylinder>
+        <a-entity id="cristal-central" girar="velocidad: 20" gltf-model="#cristal" scale="0.11 0.11 0.11" position="0 1.845 0"></a-entity>
+
+        <!-- Barrera-->
+        <a-entity position="0.621 0 2.318"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="1.159 0.85 2.008" rotation="0 30 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="1.697 0 1.697"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="2.008 0.85 1.159" rotation="0 60 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="2.318 0 0.621"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="2.318 0.85 0.000" rotation="0 90 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="2.318 0 -0.621"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="2.008 0.85 -1.159" rotation="0 120 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="1.697 0 -1.697"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="1.159 0.85 -2.008" rotation="0 150 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="0.621 0 -2.318"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="0.000 0.85 -2.318" rotation="0 180 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="-0.621 0 -2.318"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="-1.159 0.85 -2.008" rotation="0 210 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="-1.697 0 -1.697"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="-2.008 0.85 -1.159" rotation="0 240 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="-2.318 0 -0.621"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="-2.318 0.85 -0.000" rotation="0 270 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="-2.318 0 0.621"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="-2.008 0.85 1.159" rotation="0 300 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="-1.697 0 1.697"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="-1.159 0.85 2.008" rotation="0 330 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+        <a-entity position="-0.621 0 2.318"><a-cylinder color="#b08d3c" radius="0.13" height="0.04" position="0 0.02 0"></a-cylinder><a-cylinder color="#b08d3c" radius="0.035" height="1" position="0 0.5 0"></a-cylinder><a-sphere color="#b08d3c" radius="0.07" position="0 1.03 0"></a-sphere></a-entity>
+        <a-entity position="-0.000 0.85 2.318" rotation="0 360 0"><a-cylinder color="#5b2a7a" radius="0.018" height="1.242" rotation="0 0 90"></a-cylinder></a-entity>
+
+        <!-- Estatua-->
+        <a-entity position="-3.2 0 -4.2" rotation="0 37 0">
+          <a-cylinder color="#3d3b42" radius="0.75" height="0.15" position="0 0.075 0"></a-cylinder>
+          <a-cylinder color="#4a484f" radius="0.5" height="1" position="0 0.65 0"></a-cylinder>
+          <a-entity gltf-model="#pedestal" scale="0.0006 0.0006 0.0006" position="0.008 1.187 0"></a-entity>
+          <a-entity id="estatua1" gltf-model="#chamberlain" scale="2.3 2.3 2.3" position="0 2.174 -0.943"></a-entity>
+        </a-entity>
+
+        <!-- Estatua-->
+        <a-entity position="3.2 0 -4.2" rotation="0 -37 0">
+          <a-cylinder color="#3d3b42" radius="0.75" height="0.15" position="0 0.075 0"></a-cylinder>
+          <a-cylinder color="#4a484f" radius="0.5" height="1" position="0 0.65 0"></a-cylinder>
+          <a-entity gltf-model="#pedestal" scale="0.0006 0.0006 0.0006" position="0.008 1.187 0"></a-entity>
+          <a-entity id="estatua2" gltf-model="#aughra" scale="2.05 2.05 2.05" position="0.02 1.231 0.164"></a-entity>
+        </a-entity>
+
+        <!-- Muebles-->
+        <a-entity gltf-model="#closet" position="-4.6 0 -5.49"></a-entity>
+        <a-entity gltf-model="#estanteria" scale="0.014 0.014 0.014" position="4.756 0.031 -5.872"></a-entity>
+        <a-entity gltf-model="#escritorio-mago" scale="0.28 0.28 0.28" position="-5.45 0.501 4.2" rotation="0 90 0"></a-entity>
+        <a-entity gltf-model="#escritorio" scale="1.35 1.35 1.35" position="5.504 0.824 5.233" rotation="0 -90 0"></a-entity>
+        <a-entity gltf-model="#pedestal-libro" scale="20 20 20" position="5.19 0.02 -0.1" rotation="0 -90 0"></a-entity>
+
+        <!-- Candelabro colgado del techo -->
+        <a-entity gltf-model="#candelabro" scale="0.0009 0.0009 0.0009" position="0 2.48 3"></a-entity>
+
+        <!-- LUCES -->
+        <a-light type="ambient" color="#6b5a4c" intensity="1.2"></a-light>
+
+        <!-- Cristal-->
+        <a-light type="point" color="#9a6bff" intensity="1.6" distance="9" position="0 2 1.2"></a-light>
+        <a-light type="point" color="#4aa8ff" intensity="1" distance="7" position="0 3 -1"></a-light>
+        <a-light type="spot" target="#cristal-central" color="#d8c8ff" intensity="2" decay="0" distance="8" angle="25" penumbra="0.5" position="0 4.3 0.8"></a-light>
+
+        <!-- Ventana-->
+        <a-light type="spot" target="#cristal-central" color="#b9a8ff" intensity="2.5" decay="0" distance="14" angle="45" penumbra="0.6" position="0 3.2 -5.5"></a-light>
+
+        <!-- Focos de museo-->
+        <a-light type="spot" target="#estatua1" color="#ffd9a8" intensity="2.5" decay="0" distance="9" angle="30" penumbra="0.5" position="-2.4 4.2 -2.2"></a-light>
+        <a-light type="spot" target="#estatua2" color="#ffd9a8" intensity="2.5" decay="0" distance="9" angle="30" penumbra="0.5" position="2.4 4.2 -2.2"></a-light>
+
+        <!-- Focos sobre cada cuadro -->
+        <a-light type="spot" target="#marco1" color="#ffe2b8" intensity="2" decay="0" distance="8" angle="30" penumbra="0.5" position="-4.0 4.1 -3.4"></a-light>
+        <a-light type="spot" target="#marco2" color="#ffe2b8" intensity="2" decay="0" distance="8" angle="30" penumbra="0.5" position="-4.0 4.1 -1.1"></a-light>
+        <a-light type="spot" target="#marco3" color="#ffe2b8" intensity="2" decay="0" distance="8" angle="30" penumbra="0.5" position="-4.0 4.1 1.2"></a-light>
+        <a-light type="spot" target="#marco4" color="#ffe2b8" intensity="2" decay="0" distance="8" angle="30" penumbra="0.5" position="4.0 4.1 -3.4"></a-light>
+        <a-light type="spot" target="#marco5" color="#ffe2b8" intensity="2" decay="0" distance="8" angle="30" penumbra="0.5" position="4.0 4.1 -1.1"></a-light>
+        <a-light type="spot" target="#marco6" color="#ffe2b8" intensity="2" decay="0" distance="8" angle="30" penumbra="0.5" position="4.0 4.1 1.2"></a-light>
+        <a-light type="spot" target="#marco7" color="#ffe2b8" intensity="2" decay="0" distance="8" angle="30" penumbra="0.5" position="0 4.1 4.1"></a-light>
+
+        <!-- foco -->
+        <a-light type="point" intensity="2" position="-1.165 3.093 -3.752" light="decay: 0; distance: 5.62; intensity: 10; penumbra: 0.26; type: spot" rotation="-80.32868287734141 0 0"></a-light>
+    </a-scene>
+
+    <!-- Audio-->
+    <audio id="musica" src="./assets/audio/WhatsApp_Video_2026-10-29_at_6_29_35_AM.m4a" preload="auto" loop></audio>
+
+    <!-- Botón-->
+    <button id="boton-entrar" style="display:block; position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:9999; padding:12px 28px; border:1px solid #a8843f; border-radius:999px; background:rgba(20,12,30,0.85); color:#f1e3c4; font:16px Georgia,serif; letter-spacing:0.08em; cursor:pointer;">Entrar al museo</button>
+</body>
+</html>

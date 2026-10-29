@@ -1,0 +1,8 @@
+Model Information:
+* title:	Gothic Cabinet 01
+* source:	https://sketchfab.com/3d-models/gothic-cabinet-01-b71adafc16824c59a01fcb34991e2041
+* author:	Prince Obrymec (https://sketchfab.com/prince-obrymec)
+
+Model License:
+* license type:	SKETCHFAB Standard (https://sketchfab.com/licenses)
+* requirements:	Under basic restrictions, use worldwide, on all types of media, commercially or not, and in all types of derivative works
